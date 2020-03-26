@@ -46,7 +46,7 @@ except: pass
 
 # Reaction-Diffusion cache
 from pathlib import Path
-import random, string
+import random, string, tempfile
 
 from bpy.types import (
         Operator,
@@ -65,6 +65,73 @@ from bpy.props import (
 )
 
 from .utils import *
+
+
+def delete_all():
+    for o in bpy.data.objects:
+        bpy.data.objects.remove(o)
+    for c in bpy.data.collections:
+        bpy.data.collections.remove(c)
+
+def set_mm():
+    bpy.context.scene.unit_settings.length_unit = 'MILLIMETERS'
+    bpy.context.scene.unit_settings.scale_length = 0.001
+    bpy.context.space_data.overlay.grid_scale = 0.001
+
+def set_clipping_planes():
+    bpy.context.space_data.lens = 100
+    bpy.context.space_data.clip_start = 1
+    bpy.context.space_data.clip_end = 1e+006
+
+class myfacemask_setup(bpy.types.Operator):
+    bl_idname = "scene.myfacemask_setup"
+    bl_label = "Setup scene"
+    bl_description = ("Setup a new scene for MyFaceMask")
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def invoke(self, context, event):
+        return context.window_manager.invoke_props_dialog(self, width=450)
+
+    def draw(self, context):
+        layout = self.layout
+        col = layout.column(align=True)
+        col.label(text="You are creating a new scene, all the unsaved work will be lost!", icon="ERROR")
+        col.label(text="Press ESC to undo", icon='EVENT_ESC')
+
+    def execute(self, context):
+
+        try: context.scene.type = 'LOCAL'
+        except: pass
+        context.space_data.shading.show_cavity = True
+        bpy.context.space_data.shading.light = 'MATCAP'
+
+        scn = context.scene
+
+        delete_all()
+
+        # load objects from blender file
+        path = Path(os.path.dirname(os.path.realpath(__file__)))
+        scene_path = path / "data" / "MyFaceMask.blend" / "Scene"
+        bpy.ops.wm.append(filename="Text", directory=str(scene_path))
+        scene_path = path / "data" / "MyFaceMask.blend" / "Scene"
+        bpy.ops.wm.append(filename="MyFaceMask", directory=str(scene_path))
+
+        bpy.data.scenes.remove(scn)
+
+        set_mm()
+        set_clipping_planes()
+
+        #for area in bpy.context.window.screen.areas:
+        #    if area.type == 'OUTLINER':
+        #        area.spaces[0].show_restrict_column_viewport = True
+        #        area.spaces[0].show_restrict_column_select = True
+
+        #collection_path = path / "MyFaceMask.blend" / "Collection"
+        #bpy.ops.wm.append(filename="MyFaceMask", directory=str(collection_path))
+
+        context.space_data.shading.color_type = 'RANDOM'
+        return {'FINISHED'}
+
 
 class myfacemask_remesh(bpy.types.Operator):
     bl_idname = "object.myfacemask_remesh"
@@ -85,13 +152,14 @@ class myfacemask_remesh(bpy.types.Operator):
         except: return False
 
     def execute(self, context):
+        #bpy.ops.view3d.view_selected()
         bpy.ops.object.modifier_add(type='REMESH')
         context.object.modifiers["Remesh"].mode = 'SMOOTH'
         context.object.modifiers["Remesh"].octree_depth = self.detail
         context.object.name = 'Face'
         context.object.data.materials.append(bpy.data.materials['Face_Material'])
         bpy.ops.object.modifier_apply(apply_as='DATA', modifier="Remesh")
-        bpy.ops.object.shade_smooth()
+        #bpy.ops.object.shade_smooth()
         bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
         return {'FINISHED'}
 
@@ -525,6 +593,7 @@ class myfacemask_weight_toggle(Operator):
     def execute(self, context):
         bpy.ops.paint.weight_paint_toggle()
         bpy.context.scene.tool_settings.unified_paint_settings.weight = 1
+        context.tool_settings.weight_paint.brush = bpy.data.brushes['Draw']
         bpy.data.brushes["Draw"].spacing = 4
         return {'CANCELLED'}
 
@@ -565,97 +634,104 @@ class MYFACEMASK_PT_weight(Panel):
 
         layout = self.layout
         col = layout.column(align=True)
-        row = col.row(align=True)
-        row.operator("ed.undo", icon='LOOP_BACK')
-        row.operator("ed.redo", icon='LOOP_FORWARDS')
-        col.separator()
-        col.label(text="Import scan:", icon="OUTLINER_OB_ARMATURE")
-        row = col.row(align=True)
-        row.operator("import_scene.obj", text="OBJ", icon='IMPORT')
-        row.operator("import_mesh.stl", text="STL", icon='IMPORT')
-        col.separator()
-        col.operator("object.myfacemask_remesh", icon="MOD_REMESH", text="Remesh")
-        col.separator()
-        col.label(text="Adapt mask:")
-        col.operator("object.myfacemask_weight_toggle", icon="BRUSH_DATA", text="Define area")
+        scenes = bpy.data.scenes.keys()
+        if not ('MyFaceMask' in scenes and 'Text' in scenes):
+            row = col.row(align=True)
+            row.scale_y = 2
+            row.operator("scene.myfacemask_setup", icon="TOOL_SETTINGS")
+        else:
+            #col.separator()
+            row = col.row(align=True)
+            row.operator("ed.undo", icon='LOOP_BACK')
+            row.operator("ed.redo", icon='LOOP_FORWARDS')
+            col.separator()
+            col.label(text="Import scan:", icon="OUTLINER_OB_ARMATURE")
+            row = col.row(align=True)
+            row.operator("import_scene.obj", text="OBJ", icon='IMPORT')
+            row.operator("import_mesh.stl", text="STL", icon='IMPORT')
+            col.separator()
+            col.operator("object.myfacemask_remesh", icon="MOD_REMESH", text="Remesh")
+            col.separator()
+            col.label(text="Adapt mask:")
+            col.operator("object.myfacemask_weight_toggle", icon="BRUSH_DATA", text="Define area")
 
-        if mode == 'WEIGHT_PAINT':
-            weight = context.scene.tool_settings.unified_paint_settings.weight
-            if weight < 0.5:
-                col.operator("object.myfacemask_weight_add_subtract", icon="SELECT_EXTEND", text='Add')
+            if mode == 'WEIGHT_PAINT':
+                weight = context.scene.tool_settings.unified_paint_settings.weight
+                if weight < 0.5:
+                    col.operator("object.myfacemask_weight_add_subtract", icon="SELECT_EXTEND", text='Add')
+                else:
+                    col.operator("object.myfacemask_weight_add_subtract", icon="SELECT_SUBTRACT", text='Subtract')
+                #col.prop(context.scene.tool_settings.unified_paint_settings, 'weight')
+                col.prop(context.scene.tool_settings.unified_paint_settings, 'size')
+                col.separator()
+
+            col.operator("object.myfacemask_adapt_mask", icon="USER", text='Adapt mask')
+            col.separator()
+            try:
+                curve = bpy.data.objects['ContourCurve']
+                mirror = curve.modifiers['Mirror'].show_viewport
+            except: mirror = False
+            if mirror:
+                col.operator("object.myfacemask_mirror_border", icon="MOD_MIRROR", text="Symmetric border off")
             else:
-                col.operator("object.myfacemask_weight_add_subtract", icon="SELECT_SUBTRACT", text='Subtract')
-            #col.prop(context.scene.tool_settings.unified_paint_settings, 'weight')
-            col.prop(context.scene.tool_settings.unified_paint_settings, 'size')
+                col.operator("object.myfacemask_mirror_border", icon="MOD_MIRROR", text="Symmetric border on")
+            col.operator("object.myfacemask_mirror_border_flip", icon="ARROW_LEFTRIGHT", text="Invert symmetry")
+
             col.separator()
-
-        col.operator("object.myfacemask_adapt_mask", icon="USER", text='Adapt mask')
-        col.separator()
-        try:
-            curve = bpy.data.objects['ContourCurve']
-            mirror = curve.modifiers['Mirror'].show_viewport
-        except: mirror = False
-        if mirror:
-            col.operator("object.myfacemask_mirror_border", icon="MOD_MIRROR", text="Symmetric border off")
-        else:
-            col.operator("object.myfacemask_mirror_border", icon="MOD_MIRROR", text="Symmetric border on")
-        col.operator("object.myfacemask_mirror_border_flip", icon="ARROW_LEFTRIGHT", text="Invert symmetry")
-
-        col.separator()
-        col.label(text="Adjust:")
-        set_bool = False
-        my_areas = context.screen.areas
-        for area in my_areas:
-            for space in area.spaces:
-                if space.type == 'VIEW_3D':
-                    set_bool = not space.shading.show_xray
-        if set_bool:
-            col.operator("object.myfacemask_place_filter", icon="GIZMO", text='Align filter on')
-        else:
-            col.operator("object.myfacemask_place_filter", icon="GIZMO", text='Align filter off')
-        col.separator()
-
-        if mode != 'EDIT':
-            col.operator("object.myfacemask_edit_mask", icon="EDITMODE_HLT", text="Manual editing")
-            col.separator()
-        else:
-            col.operator("object.myfacemask_edit_mask_off", icon="OBJECT_DATA", text="End editing")
-            col.separator()
-
-        try:
-            hole = bpy.data.objects['Hole_01']
-        except:
-            hole = None
-        if hole != None:
-            if hole.hide_viewport:
-                col.operator("object.myfacemask_holes_snap", icon="CLIPUV_DEHLT", text="Show holes")
+            col.label(text="Adjust:")
+            set_bool = False
+            my_areas = context.screen.areas
+            for area in my_areas:
+                for space in area.spaces:
+                    if space.type == 'VIEW_3D':
+                        set_bool = not space.shading.show_xray
+            if set_bool:
+                col.operator("object.myfacemask_place_filter", icon="GIZMO", text='Align filter on')
             else:
-                col.operator("object.myfacemask_holes_snap", icon="CLIPUV_DEHLT", text="Hide holes")
-
-        if name != 'Mask' and name != '':
+                col.operator("object.myfacemask_place_filter", icon="GIZMO", text='Align filter off')
             col.separator()
-            mask = bpy.data.objects['Mask_Surface']
-            mod = mask.modifiers['Displace']
-            col.prop(mod, 'strength', text='Nose pressure')
-            mod = mask.modifiers['Thickness']
-            col.prop(mod, 'thickness', text='Thickness')
-            mod = mask.modifiers['avoid_face_intersections']
-            col.prop(mod, 'offset', text='Offset')
 
-        col.separator()
-        col.label(text="Prepare 3D print:")
-        col.operator("object.myfacemask_boolean", icon="MATSHADERBALL", text="Prepare model")
-        col.separator()
+            if mode != 'EDIT':
+                col.operator("object.myfacemask_edit_mask", icon="EDITMODE_HLT", text="Manual editing")
+                col.separator()
+            else:
+                col.operator("object.myfacemask_edit_mask_off", icon="OBJECT_DATA", text="End editing")
+                col.separator()
 
-        col.label(text="Identity:")
-        if mode != 'SCULPT':
-            col.prop(context.scene, 'myfacemask_id', text='', icon='COPY_ID')
-            col.operator('scene.myfacemask_generate_tag', icon='LINE_DATA')
+            try:
+                hole = bpy.data.objects['Hole_01']
+            except:
+                hole = None
+            if hole != None:
+                if hole.hide_viewport:
+                    col.operator("object.myfacemask_holes_snap", icon="CLIPUV_DEHLT", text="Show holes")
+                else:
+                    col.operator("object.myfacemask_holes_snap", icon="CLIPUV_DEHLT", text="Hide holes")
+
+            if name != 'Mask' and name != '':
+                col.separator()
+                mask = bpy.data.objects['Mask_Surface']
+                mod = mask.modifiers['Displace']
+                col.prop(mod, 'strength', text='Nose pressure')
+                mod = mask.modifiers['Thickness']
+                col.prop(mod, 'thickness', text='Thickness')
+                mod = mask.modifiers['avoid_face_intersections']
+                col.prop(mod, 'offset', text='Offset')
+
             col.separator()
-            col.label(text="Export:")
-            col.operator("export_mesh.stl", text="STL", icon='EXPORT')
-        else:
-            col.operator('object.myfacemask_tag_mask_off', icon='OBJECT_DATA', text='Done')
+            col.label(text="Prepare 3D print:")
+            col.operator("object.myfacemask_boolean", icon="MATSHADERBALL", text="Prepare model")
+            col.separator()
+
+            col.label(text="Identity:")
+            if mode != 'SCULPT':
+                col.prop(context.scene, 'myfacemask_id', text='', icon='COPY_ID')
+                col.operator('scene.myfacemask_generate_tag', icon='LINE_DATA')
+                col.separator()
+                col.label(text="Export:")
+                col.operator("export_mesh.stl", text="STL", icon='EXPORT')
+            else:
+                col.operator('object.myfacemask_tag_mask_off', icon='OBJECT_DATA', text='Done')
 
 class myfacemask_generate_tag(Operator):
     bl_idname = "scene.myfacemask_generate_tag"
@@ -674,7 +750,8 @@ class myfacemask_generate_tag(Operator):
         code = context.scene.myfacemask_id
         if code == '': code = 'WASP'
         text_scene.objects['Text'].data.body = code
-        image_path = bpy.context.preferences.filepaths.temporary_directory + "\\tag.png"
+        #image_path = bpy.context.preferences.filepaths.temporary_directory + "\\tag.png"
+        image_path = str(Path(tempfile.gettempdir()) / 'tag.png')
         text_scene.render.filepath = image_path
         bpy.ops.render.render(scene='Text', write_still=1)
 

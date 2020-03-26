@@ -27,7 +27,7 @@
 bl_info = {
     "name": "MyFaceMask",
     "author": "Alessandro Zomparelli with WASP",
-    "version": (0, 1, 00),
+    "version": (0, 1, 1),
     "blender": (2, 82, 0),
     "location": "",
     "description": "Custom made 3D printable breathing Mask, based on 3D scanned face",
@@ -58,6 +58,8 @@ translation_dict = {
             ('*', 'Manually place holes') : 'Posiziona manualmente i fori',
             ('*', 'Manually align position and rotation of the filter') : 'Allinea manualmente la posiizione e la rotazione del filtro',
             ('*', 'Identification code to manually emboss on the surface') : 'Codice identificativo da inserire in rilievo sulla superficie',
+            ('*', 'You are creating a new scene, all the unsaved work will be lost!') : 'Stai per creare una nuova scena, tutto il lavoro non salvato verrà perso!',
+            ('*', 'Setup a new scene for MyFaceMask') : 'Imposta una nuova scena per MyFaceMask',
             ('Operator', 'Prepare model') : 'Prepara modello',
             ('Operator', 'Invert symmetry') : 'Inverti simmetria',
             ('Operator', 'Define area') : 'Definisci area',
@@ -65,6 +67,7 @@ translation_dict = {
             ('Operator', 'Symmetric border off') : 'Disattiva simmetria',
             ('Operator', 'Align filter') : 'Allinea filtro',
             ('Operator', 'Manual editing') : 'Modifica manuale',
+            ('Operator', 'Setup scene') : 'Imposta scena',
             ('Operator', 'Done') : 'Fatto',
             ('Operator', 'End editing') : 'Termina modifica',
             ('*', 'Nose pressure') : 'Pressione naso',
@@ -110,6 +113,7 @@ classes = (
     myfacemask_tools.myfacemask_edit_mask_off,
     myfacemask_tools.myfacemask_tag_mask_off,
     myfacemask_tools.myfacemask_generate_tag,
+    myfacemask_tools.myfacemask_setup,
     myfacemask_tools.MYFACEMASK_PT_weight
 )
 
