@@ -81,7 +81,7 @@ def set_mm():
 def set_clipping_planes():
     bpy.context.space_data.lens = 100
     bpy.context.space_data.clip_start = 1
-    bpy.context.space_data.clip_end = 1e+006
+    bpy.context.space_data.clip_end = 1e+004
 
 class myfacemask_setup(bpy.types.Operator):
     bl_idname = "scene.myfacemask_setup"
@@ -104,6 +104,7 @@ class myfacemask_setup(bpy.types.Operator):
         except: pass
         context.space_data.shading.show_cavity = True
         bpy.context.space_data.shading.light = 'MATCAP'
+        bpy.context.space_data.overlay.show_cursor = False
 
         scn = context.scene
 
@@ -120,14 +121,6 @@ class myfacemask_setup(bpy.types.Operator):
 
         set_mm()
         set_clipping_planes()
-
-        #for area in bpy.context.window.screen.areas:
-        #    if area.type == 'OUTLINER':
-        #        area.spaces[0].show_restrict_column_viewport = True
-        #        area.spaces[0].show_restrict_column_select = True
-
-        #collection_path = path / "MyFaceMask.blend" / "Collection"
-        #bpy.ops.wm.append(filename="MyFaceMask", directory=str(collection_path))
 
         context.space_data.shading.color_type = 'RANDOM'
         return {'FINISHED'}
@@ -499,7 +492,7 @@ class myfacemask_edit_mask(Operator):
     def draw(self, context):
         layout = self.layout
         col = layout.column(align=True)
-        col.label(text="You are going to do a non destructive operation", icon="ERROR")
+        col.label(text="You are going to do a destructive operation", icon="ERROR")
         col.label(text="Press ESC to undo", icon='EVENT_ESC')
 
     def execute(self, context):
@@ -524,10 +517,12 @@ class myfacemask_edit_mask(Operator):
             #bpy.ops.object.modifier_apply(apply_as='DATA', modifier="curve_project_02")
             bpy.ops.object.mode_set(mode='EDIT')
             bpy.ops.mesh.select_mode(use_extend=False, use_expand=False, type='VERT')
-            bpy.context.scene.tool_settings.use_snap = True
+            bpy.ops.wm.tool_set_by_index(index=0)
+            bpy.context.scene.tool_settings.use_snap = False
             bpy.context.scene.tool_settings.snap_target = 'CLOSEST'
             bpy.context.scene.tool_settings.snap_elements = {'FACE'}
             bpy.context.scene.tool_settings.use_proportional_edit = True
+            bpy.context.scene.tool_settings.proportional_size = 20
             return {'FINISHED'}
         except:
             self.report({'ERROR'}, "Something goes wrong")
@@ -698,9 +693,11 @@ class MYFACEMASK_PT_weight(Panel):
                 col.operator("object.myfacemask_edit_mask_off", icon="OBJECT_DATA", text="End editing")
                 col.separator()
 
-            try:
+            if 'Hole_01' in bpy.data.objects.keys():
                 hole = bpy.data.objects['Hole_01']
-            except:
+            elif 'Hole_02' in bpy.data.objects.keys():
+                hole = bpy.data.objects['Hole_02']
+            else:
                 hole = None
             if hole != None:
                 if hole.hide_viewport:
@@ -755,17 +752,41 @@ class myfacemask_generate_tag(Operator):
         text_scene.render.filepath = image_path
         bpy.ops.render.render(scene='Text', write_still=1)
 
+        for o in context.scene.objects: o.select_set(False)
+        mask = bpy.data.objects['Mask']
+        mask.select_set(True)
+        bpy.context.view_layer.objects.active = mask
+
+        # create sculpt mask
+        bpy.ops.object.mode_set(mode='SCULPT')
+
+        me = mask.data
+        #verts = [v.select for v in me.vertices]
+        bm = bmesh.new()
+        bm.from_mesh(me)
+        if not bm.verts.layers.paint_mask:
+            m = bm.verts.layers.paint_mask.new()
+        else:
+            m = bm.verts.layers.paint_mask[0]
+        for v in bm.verts:
+            v[m] = v.co.z < 11
+        bm.to_mesh(me)
+        bm.clear()
+        me.update()
+
         # generate brush texture
         tex = bpy.data.textures.new('TAG','IMAGE')
         img = bpy.data.images.load(filepath=image_path)
         tex.image = img
-        bpy.ops.object.mode_set(mode='SCULPT')
         brush = bpy.data.brushes["SculptDraw"]
+        context.tool_settings.sculpt.brush.sculpt_tool = 'DRAW'
+        context.tool_settings.sculpt.brush = brush
         brush.texture_slot.texture = tex
         brush.texture_slot.map_mode = 'AREA_PLANE'
+        brush.curve_preset = 'CONSTANT'
         brush.strength = 0.2
         context.scene.tool_settings.unified_paint_settings.size = 250
-        brush.direction = 'SUBTRACT'
+        #brush.direction = 'SUBTRACT'
 
         bpy.ops.sculpt.dynamic_topology_toggle()
         context.scene.tool_settings.sculpt.detail_size = 1
@@ -817,7 +838,10 @@ class myfacemask_boolean(Operator):
         ob.name = 'Mask'
         for m in ob.modifiers: m.show_viewport = True
         for m in ob.modifiers:
-            bpy.ops.object.modifier_apply(apply_as='DATA', modifier=m.name)
+            try:
+                bpy.ops.object.modifier_apply(apply_as='DATA', modifier=m.name)
+            except:
+                ob.modifiers.remove(m)
         bpy.ops.object.location_clear(clear_delta=False)
         bpy.ops.object.rotation_clear(clear_delta=False)
         bpy.ops.view3d.view_selected()
@@ -854,18 +878,30 @@ class myfacemask_holes_snap(Operator):
                 if space.type == 'VIEW_3D':
                     space.shading.show_xray = False
         context.scene.tool_settings.use_snap = False
-        #context.scene.tool_settings.snap_target = 'MEDIAN'
-        #context.scene.tool_settings.snap_elements = {'FACE'}
-        #context.scene.tool_settings.use_snap_align_rotation = True
-        set_bool = objects["Hole_01"].hide_viewport
+
+        if "Hole_01" in objects.keys():
+            set_bool = objects["Hole_01"].hide_viewport
+        if "Hole_02" in objects.keys():
+            set_bool = objects["Hole_02"].hide_viewport
+
+        if set_bool:
+            bpy.data.objects['Mask_Surface'].select_set(True)
+            bpy.ops.view3d.view_axis(type='RIGHT')
+            bpy.ops.view3d.view_selected()
+            bpy.data.objects['Mask_Surface'].select_set(False)
 
         context.space_data.show_gizmo_object_translate = set_bool
         context.space_data.show_gizmo_object_rotate = False
-        objects["Hole_01"].hide_viewport = not set_bool
-        objects["Hole_02"].hide_viewport = not set_bool
+        hole = None
+        if 'Hole_01' in bpy.data.objects.keys():
+            hole = objects["Hole_01"]
+            hole.hide_viewport = not set_bool
+        if 'Hole_02' in bpy.data.objects.keys():
+            hole = objects["Hole_02"]
+            hole.hide_viewport = not set_bool
         for o in objects: o.select_set(False)
-        objects["Hole_01"].select_set(True)
-        context.view_layer.objects.active = objects["Hole_01"]
+        hole.select_set(True)
+        context.view_layer.objects.active = hole
         return {'FINISHED'}
 
 class myfacemask_place_filter(Operator):
@@ -885,8 +921,6 @@ class myfacemask_place_filter(Operator):
     def execute(self, context):
         ob = bpy.data.objects['Filter']
         for o in bpy.data.objects: o.select_set(False)
-        ob.select_set(True)
-        context.view_layer.objects.active = ob
         set_bool = False
         my_areas = bpy.context.screen.areas
         for area in my_areas:
@@ -894,6 +928,13 @@ class myfacemask_place_filter(Operator):
                 if space.type == 'VIEW_3D':
                     set_bool = not space.shading.show_xray
                     space.shading.show_xray = set_bool
+        if set_bool:
+            ob.select_set(True)
+            context.view_layer.objects.active = ob
+            bpy.data.objects['Mask_Surface'].select_set(True)
+            bpy.ops.view3d.view_axis(type='RIGHT')
+            bpy.ops.view3d.view_selected()
+            bpy.data.objects['Mask_Surface'].select_set(False)
         context.space_data.show_gizmo_object_translate = set_bool
         context.space_data.show_gizmo_object_rotate = set_bool
         context.scene.tool_settings.use_snap = False
