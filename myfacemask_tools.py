@@ -481,13 +481,17 @@ class myfacemask_edit_mask(Operator):
 
     @classmethod
     def poll(cls, context):
-        try:
-            ob = context.object
-            return ob.name == 'Mask_Surface' and ob.modifiers['adapt_to_face'].target != None
-        except: return False
+        keys = bpy.data.objects.keys()
+        if 'Mask_Surface' in keys and 'Face' in keys:
+            ob = bpy.data.objects['Mask_Surface']
+            return ob.modifiers['adapt_to_face'].target != None
+        else: return False
 
     def invoke(self, context, event):
-        return context.window_manager.invoke_props_dialog(self, width=350)
+        mask_srf = bpy.data.objects['Mask_Surface']
+        if 'Mirror' in mask_srf.modifiers.keys():
+            return context.window_manager.invoke_props_dialog(self, width=350)
+        else: return self.execute(context)
 
     def draw(self, context):
         layout = self.layout
@@ -496,37 +500,60 @@ class myfacemask_edit_mask(Operator):
         col.label(text="Press ESC to undo", icon='EVENT_ESC')
 
     def execute(self, context):
-        try:
-            face = bpy.data.objects['Face']
-            face.lock_location[1] = True
-            face.lock_location[0] = True
-            face.lock_location[2] = True
-            face.lock_rotation[0] = True
-            face.lock_rotation[1] = True
-            face.lock_rotation[2] = True
-            face.lock_scale[0] = True
-            face.lock_scale[1] = True
-            face.lock_scale[2] = True
-            ob = context.object
-            bpy.ops.object.mode_set(mode='OBJECT')
+        bpy.ops.object.mode_set(mode='OBJECT')
+        for o in context.scene.objects: o.select_set(False)
+        mask = bpy.data.objects['Mask_Surface']
+        mask.select_set(True)
+        bpy.context.view_layer.objects.active = mask
+
+        face = bpy.data.objects['Face']
+        face.lock_location[1] = True
+        face.lock_location[0] = True
+        face.lock_location[2] = True
+        face.lock_rotation[0] = True
+        face.lock_rotation[1] = True
+        face.lock_rotation[2] = True
+        face.lock_scale[0] = True
+        face.lock_scale[1] = True
+        face.lock_scale[2] = True
+
+        mods = mask.modifiers.keys()
+        if 'Mirror' in mods:
             bpy.ops.object.modifier_apply(apply_as='DATA', modifier="Mirror")
+        if 'Bevel' in mods:
             bpy.ops.object.modifier_apply(apply_as='DATA', modifier="Bevel")
+        if 'Subdivision' in mods:
             bpy.ops.object.modifier_apply(apply_as='DATA', modifier="Subdivision")
+        if 'curve_project_01' in mods:
             bpy.ops.object.modifier_apply(apply_as='DATA', modifier="curve_project_01")
-            ob.modifiers["Hook_Border"].object = bpy.data.objects['ContourCurve']
-            #bpy.ops.object.modifier_apply(apply_as='DATA', modifier="curve_project_02")
-            bpy.ops.object.mode_set(mode='EDIT')
-            bpy.ops.mesh.select_mode(use_extend=False, use_expand=False, type='VERT')
-            bpy.ops.wm.tool_set_by_index(index=0)
-            bpy.context.scene.tool_settings.use_snap = False
-            bpy.context.scene.tool_settings.snap_target = 'CLOSEST'
-            bpy.context.scene.tool_settings.snap_elements = {'FACE'}
-            bpy.context.scene.tool_settings.use_proportional_edit = True
-            bpy.context.scene.tool_settings.proportional_size = 20
-            return {'FINISHED'}
-        except:
-            self.report({'ERROR'}, "Something goes wrong")
-            return {'CANCELLED'}
+
+        mask.modifiers["Hook_Border"].object = bpy.data.objects['ContourCurve']
+        #bpy.ops.object.modifier_apply(apply_as='DATA', modifier="curve_project_02")
+        bpy.ops.object.mode_set(mode='EDIT')
+        bpy.ops.mesh.select_mode(use_extend=False, use_expand=False, type='VERT')
+        bpy.ops.wm.tool_set_by_index(index=0)
+        bpy.context.scene.tool_settings.use_snap = False
+        bpy.context.scene.tool_settings.snap_target = 'CLOSEST'
+        bpy.context.scene.tool_settings.snap_elements = {'FACE'}
+        bpy.context.scene.tool_settings.use_proportional_edit = True
+        bpy.context.scene.tool_settings.proportional_size = 20
+
+        if "Hole_01" in bpy.data.objects.keys():
+            bpy.data.objects["Hole_01"].hide_viewport = True
+        if "Hole_02" in bpy.data.objects.keys():
+            bpy.data.objects["Hole_02"].hide_viewport = True
+        context.space_data.show_gizmo_object_translate = False
+        context.space_data.show_gizmo_object_rotate = False
+
+        my_areas = context.screen.areas
+        for area in my_areas:
+            for space in area.spaces:
+                if space.type == 'VIEW_3D':
+                    space.shading.show_xray = False
+        bpy.context.space_data.shading.type = 'SOLID'
+        bpy.context.space_data.overlay.show_statvis = False
+
+        return {'FINISHED'}
 
 
 class myfacemask_edit_mask_off(Operator):
