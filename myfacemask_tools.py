@@ -484,7 +484,9 @@ class myfacemask_edit_mask(Operator):
         keys = bpy.data.objects.keys()
         if 'Mask_Surface' in keys and 'Face' in keys:
             ob = bpy.data.objects['Mask_Surface']
-            return ob.modifiers['adapt_to_face'].target != None
+            if 'adapt_to_face' in ob.modifiers.keys():
+                return ob.modifiers['adapt_to_face'].target != None
+            else: return False
         else: return False
 
     def invoke(self, context, event):
@@ -773,7 +775,10 @@ class myfacemask_generate_tag(Operator):
         text_scene = bpy.data.scenes['Text']
         code = context.scene.myfacemask_id
         if code == '': code = 'WASP'
-        text_scene.objects['Text'].data.body = code
+        txt = text_scene.objects['Text']
+        txt.data.body = code
+        diag = txt.dimensions.length/4
+        if diag != 0: txt.scale *= 0.9/diag
         #image_path = bpy.context.preferences.filepaths.temporary_directory + "\\tag.png"
         image_path = str(Path(tempfile.gettempdir()) / 'tag.png')
         text_scene.render.filepath = image_path
