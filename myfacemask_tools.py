@@ -737,12 +737,15 @@ class MYFACEMASK_PT_weight(Panel):
             if name != 'Mask' and name != '':
                 col.separator()
                 mask = bpy.data.objects['Mask_Surface']
-                mod = mask.modifiers['Displace']
-                col.prop(mod, 'strength', text='Nose pressure')
-                mod = mask.modifiers['Thickness']
-                col.prop(mod, 'thickness', text='Thickness')
-                mod = mask.modifiers['avoid_face_intersections']
-                col.prop(mod, 'offset', text='Offset')
+                if 'Displace' in mask.modifiers.keys():
+                    mod = mask.modifiers['Displace']
+                    col.prop(mod, 'strength', text='Nose pressure')
+                if 'Thickness' in mask.modifiers.keys():
+                    mod = mask.modifiers['Thickness']
+                    col.prop(mod, 'thickness', text='Thickness')
+                if 'avoid_face_intersections' in mask.modifiers.keys():
+                    mod = mask.modifiers['avoid_face_intersections']
+                    col.prop(mod, 'offset', text='Offset')
 
             col.separator()
             col.label(text="Prepare 3D print:")
@@ -777,9 +780,10 @@ class myfacemask_generate_tag(Operator):
         if code == '': code = 'WASP'
         txt = text_scene.objects['Text']
         txt.data.body = code
-        diag = txt.dimensions.length/4
-        if diag != 0: txt.scale *= 0.9/diag
-        #image_path = bpy.context.preferences.filepaths.temporary_directory + "\\tag.png"
+        diag = txt.dimensions.length
+        if diag != 0: mult = 0.95/diag
+        else: mult = 1
+        txt.dimensions = mult*txt.dimensions
         image_path = str(Path(tempfile.gettempdir()) / 'tag.png')
         text_scene.render.filepath = image_path
         bpy.ops.render.render(scene='Text', write_still=1)
