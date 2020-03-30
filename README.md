@@ -1,5 +1,7 @@
 # MyFaceMask
 
+![Cover](https://www.3dwasp.com/wp-content/uploads/2020/03/My-Face-Mask-Blender-Add-on.png)
+
 ## English
 
 MyFaceMask add-on has been created as initiative by WASP. It's a tool with the aim to guide the user in the process of creating MyFaceMask breathing masks:
