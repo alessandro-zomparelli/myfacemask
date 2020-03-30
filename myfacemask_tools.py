@@ -777,16 +777,29 @@ class myfacemask_generate_tag(Operator):
         except: return False
 
     def execute(self, context):
+        scene = context.scene
         text_scene = bpy.data.scenes['Text']
+
         code = context.scene.myfacemask_id
         if code == '': code = 'WASP'
         txt = text_scene.objects['Text']
         txt.data.body = code
-        diag = txt.dimensions.length
-        if diag != 0: mult = 0.95/diag
-        else: mult = 1
-        txt.dimensions = mult*txt.dimensions
+
+        me = simple_to_mesh(txt)
+        verts = [0]*len(me.vertices)*3
+        me.vertices.foreach_get('co',verts)
+        verts = np.array(verts).reshape((len(me.vertices),3))
+        tmin = np.min(verts,axis=0)
+        tmax = np.max(verts,axis=0)
+        tbounds = tmax-tmin
+        dim = Vector(tbounds).length
+        bpy.data.meshes.remove(me)
+
+        bpy.data.objects['Camera'].data.ortho_scale = dim * 1.05
+        mat_after = bpy.data.objects['Camera'].matrix_world.copy()
+
         image_path = str(Path(tempfile.gettempdir()) / 'tag.png')
+        text_scene = text_scene.evaluated_get(context.evaluated_depsgraph_get())
         text_scene.render.filepath = image_path
         bpy.ops.render.render(scene='Text', write_still=1)
 
