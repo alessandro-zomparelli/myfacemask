@@ -27,13 +27,13 @@
 bl_info = {
     "name": "MyFaceMask",
     "author": "Alessandro Zomparelli with WASP",
-    "version": (0, 1, 2),
+    "version": (0, 1, 3),
     "blender": (2, 82, 0),
-    "location": "",
+    "location": "Viewport > Right panel",
     "description": "Custom made 3D printable breathing Mask, based on 3D scanned face",
     "warning": "",
-    "wiki_url": "",
-    "tracker_url": "",
+    "wiki_url": "https://www.3dwasp.com/my-face-mask-addon-blender/",
+    "tracker_url": "https://github.com/alessandro-zomparelli/myfacemask/issues",
     "category": "Object"}
 
 

@@ -362,7 +362,6 @@ class myfacemask_adapt_mask(Operator):
 
         bm_faces = np.array(bm.faces)
 
-        #print("Contour Curves, data loaded: " + str(timeit.default_timer() - start_time) + " sec")
         step_time = timeit.default_timer()
         for c in range(1):
             min_iso = min(0, 1)
@@ -407,13 +406,16 @@ class myfacemask_adapt_mask(Operator):
 
         if len(total_segments) > 0:
             step_time = timeit.default_timer()
-            ordered_points = find_curves(total_segments, len(total_verts))
+            try:
+                ordered_points = find_curves(total_segments, len(total_verts))
+            except:
+                self.report({'ERROR'}, "Something goes wrong, try to fill the inner parts, or to smooth the weight map")
+                return {'CANCELLED'}
 
             max_len = 0
             longer_curve = [ordered_points[0]]
             for crv in ordered_points:
                 pts = total_verts[np.array(crv,dtype='int')]
-                print(pts.shape)
                 size_x = pts.max(axis=0)[0] - pts.min(axis=0)[0]
                 if max_len < size_x:
                     max_len = size_x
