@@ -1,10 +1,10 @@
-# MyFaceMask
+# MyFaceMask add-on
 
-![Cover](https://www.3dwasp.com/wp-content/uploads/2020/03/My-Face-Mask-Blender-Add-on.png)
+[![Cover](https://www.3dwasp.com/wp-content/uploads/2020/03/My-Face-Mask-Blender-Add-on.png)](https://www.3dwasp.com/my-face-mask-addon-blender/)
 
 ## English
 
-MyFaceMask add-on has been created as initiative by WASP. It's a tool with the aim to guide the user in the process of creating MyFaceMask breathing masks:
+MyFaceMask is an add-on for Blender, that has been created as initiative by WASP. It's a tool with the aim to guide the user in the process of creating custom made MyFaceMask breathing masks starting from a 3D scan of the user's face:
 https://www.3dwasp.com/mascherina-stampata-3d-da-scansione-3d/
 
 MyFaceMask add-on documentation: https://www.3dwasp.com/my-face-mask-addon-blender/
@@ -19,7 +19,7 @@ MyFaceMask add-on documentation: https://www.3dwasp.com/my-face-mask-addon-blend
 
 ## Italiano
 
-MyFaceMask add-on nasce su iniziativa di WASP per guidare l'utente nella procedura di adattamento della maskerina respiratoria MyFaceMask:
+MyFaceMask è una add-on per Blender che nasce su iniziativa di WASP per guidare l'utente nella procedura di adattamento della mascherina respiratoria personalizzata MyFaceMask a partire da una scansione 3D del volto:
 https://www.3dwasp.com/mascherina-stampata-3d-da-scansione-3d/
 
 Documentazione di MyFaceMask add-on: https://www.3dwasp.com/my-face-mask-addon-blender/
