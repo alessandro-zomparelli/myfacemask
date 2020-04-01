@@ -430,7 +430,7 @@ class myfacemask_adapt_mask(Operator):
             crv.matrix_world = ob0.matrix_world
         else:
             bm.free()
-            self.report({'ERROR'}, "There are no values in the chosen range")
+            self.report({'ERROR'}, "Please define the area on the face")
             return {'CANCELLED'}
         bm.free()
 
@@ -446,7 +446,11 @@ class myfacemask_adapt_mask(Operator):
         mid_point = Vector((0,0,0))
         for v in verts:
             mid_point += v
-        mid_point/=n_verts
+        try:
+            mid_point/=n_verts
+        except:
+            self.report({'ERROR'}, "Please define the area on the face")
+            return {'CANCELLED'}
         nor_vec = Vector((0,0,0))
         for i in range(n_verts-1):
             v0 = verts[i] - mid_point
