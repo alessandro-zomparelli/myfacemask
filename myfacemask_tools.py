@@ -631,6 +631,7 @@ class myfacemask_weight_add_subtract(Operator):
     bl_description = ('Change brush mode')
 
     def execute(self, context):
+        context.tool_settings.weight_paint.brush = bpy.data.brushes['Draw']
         val = context.scene.tool_settings.unified_paint_settings.weight
         if val < 0.5:
             context.scene.tool_settings.unified_paint_settings.weight = 1
@@ -760,7 +761,7 @@ class MYFACEMASK_PT_weight(Panel):
                 col.operator('scene.myfacemask_generate_tag', icon='LINE_DATA')
                 col.separator()
                 col.label(text="Export:")
-                col.operator("export_mesh.stl", text="STL", icon='EXPORT')
+                col.operator("export_mesh.stl", text="STL", icon='EXPORT').use_selection = True
             else:
                 col.operator('object.myfacemask_tag_mask_off', icon='OBJECT_DATA', text='Done')
 
