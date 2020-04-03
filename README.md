@@ -8,6 +8,7 @@ MyFaceMask is an add-on for Blender, that has been created as initiative by WASP
 The add-on is based on the project MyFaceMask: https://www.3dwasp.com/mascherina-stampata-3d-da-scansione-3d/
 
 MyFaceMask add-on documentation: https://www.3dwasp.com/my-face-mask-addon-blender/
+
 MyFaceMask download files and instructions: https://www.3dwasp.com/en/download/download-info/my-mask-3d-printed-mask-from-3d-scanning/
 
 [![MyFaceMask add-on - Tutorial (ENG)](http://img.youtube.com/vi/KDNvUnDdqVw/0.jpg)](http://www.youtube.com/watch?v=KDNvUnDdqVw "MyFaceMask add-on - Tutorial (ENG)")
@@ -24,6 +25,7 @@ MyFaceMask è una add-on per Blender che nasce su iniziativa di WASP per guidare
 La add-on è basata sul progetto MyFaceMask: https://www.3dwasp.com/mascherina-stampata-3d-da-scansione-3d/
 
 Documentazione di MyFaceMask add-on: https://www.3dwasp.com/my-face-mask-addon-blender/
+
 download dei file e istruzioni: https://www.3dwasp.com/en/download/download-info/my-mask-3d-printed-mask-from-3d-scanning/
 
 [![MyFaceMask add-on - Tutorial (ITA)](http://img.youtube.com/vi/vd0yvsDkQXU/0.jpg)](http://www.youtube.com/watch?v=vd0yvsDkQXU "MyFaceMask add-on - Tutorial (ITA)")
