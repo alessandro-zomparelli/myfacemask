@@ -27,7 +27,7 @@
 bl_info = {
     "name": "MyFaceMask",
     "author": "Alessandro Zomparelli with WASP",
-    "version": (0, 1, 3),
+    "version": (0, 1, 4),
     "blender": (2, 82, 0),
     "location": "Viewport > Right panel",
     "description": "Custom made 3D printable breathing Mask, based on 3D scanned face",
@@ -163,11 +163,29 @@ classes = (
     myfacemask_tools.MYFACEMASK_PT_weight
 )
 
+def update_thickness(self, context):
+    t = context.scene.myfacemask_thickness
+    try:
+        bpy.data.objects['Filter'].modifiers['Displace'].strength = max((t-1.6)*1.3,0)
+    except: pass
+    try:
+        bpy.data.objects['Mask_Surface'].modifiers['Thickness'].thickness = t
+    except: pass
+    return
+
 def register():
     from bpy.utils import register_class
     for cls in classes:
         bpy.utils.register_class(cls)
     bpy.types.Scene.myfacemask_id = bpy.props.StringProperty(name='ID', description='Identification code to manually emboss on the surface')
+    bpy.types.Scene.myfacemask_thickness = bpy.props.FloatProperty(
+        name='Thickness',
+        description='Mask thickness',
+        min=0,
+        max=5,
+        default=1.6,
+        update=update_thickness
+        )
     bpy.app.translations.register(__name__, translation_dict)
 
 def unregister():

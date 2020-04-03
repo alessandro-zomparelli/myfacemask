@@ -83,6 +83,7 @@ def set_clipping_planes():
     bpy.context.space_data.clip_start = 1
     bpy.context.space_data.clip_end = 1e+004
 
+
 class myfacemask_setup(bpy.types.Operator):
     bl_idname = "scene.myfacemask_setup"
     bl_label = "Setup scene"
@@ -749,7 +750,8 @@ class MYFACEMASK_PT_weight(Panel):
                     col.prop(mod, 'strength', text='Nose pressure')
                 if 'Thickness' in mask.modifiers.keys():
                     mod = mask.modifiers['Thickness']
-                    col.prop(mod, 'thickness', text='Thickness')
+                    #col.prop(mod, 'thickness', text='Thickness')
+                    col.prop(context.scene, 'myfacemask_thickness', text='Thickness')
                 if 'avoid_face_intersections' in mask.modifiers.keys():
                     mod = mask.modifiers['avoid_face_intersections']
                     col.prop(mod, 'offset', text='Offset')
