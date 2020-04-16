@@ -61,11 +61,306 @@ from bpy.props import (
     IntProperty,
     StringProperty,
     FloatVectorProperty,
-    IntVectorProperty
+    IntVectorProperty,
+    PointerProperty
 )
 
 from .utils import *
 
+hangs_types = ['None','None']
+
+class myfacemask_props(PropertyGroup):
+    zscale : FloatProperty(
+        name="Scale", default=1, soft_min=0, soft_max=10,
+        description="Scale factor for the component thickness"
+        )
+    hangs : EnumProperty(
+        items=(
+                ('CONSTANT', "Constant", "Uniform thinkness"),
+                ('ADAPTIVE', "Relative", "Preserve component's proportions")
+                ),
+        default='ADAPTIVE',
+        name="Z-Scale according to faces size"
+        )
+
+def update_model(self, context):
+    try: bpy.ops.object.mode_set(mode='OBJECT')
+    except: pass
+    active = context.object
+    scn = context.scene
+
+    # filter
+    old_filter = bpy.data.objects[scn.myfacemask_filter]
+    scn.myfacemask_filter = 'Filter_' + scn.myfacemask_model
+    new_filter = bpy.data.objects[scn.myfacemask_filter]
+    new_filter.location = old_filter.location
+    new_filter.rotation_euler = old_filter.rotation_euler
+
+    # surface
+    old_surface = bpy.data.objects[scn.myfacemask_surface]
+    scn.myfacemask_surface = 'Surface_' + scn.myfacemask_model
+    new_surface = bpy.data.objects[scn.myfacemask_surface]
+    new_surface.modifiers['Displace'].strength = old_surface.modifiers['Displace'].strength
+    new_surface.modifiers['avoid_face_intersections'].offset = old_surface.modifiers['avoid_face_intersections'].offset
+
+    sel_filter = old_filter.select_get()
+    sel_surface = old_surface.select_get()
+    if active == old_filter:
+        bpy.context.view_layer.objects.active = new_filter
+    if active == old_surface:
+        bpy.context.view_layer.objects.active = new_surface
+
+    coll = bpy.data.collections['Filters'].objects
+    for ob in [o for o in coll]:
+        ob.hide_viewport = ob.name not in (scn.myfacemask_filter, scn.myfacemask_surface)
+
+    new_filter.select_set(sel_filter)
+    new_surface.select_set(sel_surface)
+    return
+
+
+def update_details(self, context):
+    try: bpy.ops.object.mode_set(mode='OBJECT')
+    except: pass
+    if 'Mask' in bpy.data.objects.keys():
+        mask = bpy.data.objects['Mask']
+        bpy.data.objects.remove(mask)
+
+    bpy.data.collections['Filters'].hide_viewport = False
+    bpy.data.objects[context.scene.myfacemask_filter].hide_viewport = False
+    bpy.data.objects[context.scene.myfacemask_surface].hide_viewport = False
+
+    scene = context.scene
+    for o in scene.objects: o.select_set(False)
+
+    surf = bpy.data.objects[context.scene.myfacemask_surface].copy()
+    surf.data = surf.data.copy()
+    bpy.data.collections['MyFaceMask'].objects.link(surf)
+    surf.select_set(True)
+    bpy.context.view_layer.objects.active = surf
+    thickness = surf.modifiers['Thickness'].thickness
+    for m in surf.modifiers:
+        if m.type == 'HOOK':
+            if m.object == None:
+                surf.modifiers.remove(m)
+                continue
+        if m.type == 'DISPLACE':
+            if m.strength == 0:
+                surf.modifiers.remove(m)
+                continue
+        try:
+            type = m.type
+            bpy.ops.object.modifier_apply(apply_as='DATA', modifier=m.name)
+            if type == 'BEVEL':
+                surf.data.polygons[1].material_index = 1
+                surf.data.polygons[71].material_index = 2
+                surf.data.polygons[6].material_index = 3
+                surf.data.polygons[19].material_index = 4
+        except: pass
+
+    surf.data.update()
+    me = surf.data
+    n_verts = len(me.vertices)
+    n_half = int(n_verts/2)
+    for i in range(n_half):
+        v0 = me.vertices[i]
+        v1 = me.vertices[i+n_half]
+        v2 = v1.co-v0.co
+        v2 = Vector((v2.x,v2.y,0))
+        v1.co = v2.normalized()*thickness + v0.co
+
+    # add eyelets
+    verts0 = [0]*len(me.vertices)*3
+    me.vertices.foreach_get('co',verts0)
+    verts0 = np.array(verts0).reshape((-1,3))
+    normals0 = [0]*len(me.vertices)*3
+    me.vertices.foreach_get('normal',normals0)
+    normals0 = np.array(normals0).reshape((-1,3))
+
+    bm = bmesh.new()
+    bm.from_mesh(me)
+    bm.faces.ensure_lookup_table()
+    bm.verts.ensure_lookup_table()
+    sides = 9
+
+    # component
+    bpy.data.collections['Hangs'].hide_viewport = False
+    ob1 = bpy.data.objects[context.scene.myfacemask_hangs]
+    ob1.hide_viewport = False
+    me1 = simple_to_mesh(ob1) #ob1.data.copy()
+    bpy.data.collections['Hangs'].hide_viewport = True
+    ob1.hide_viewport = True
+    verts1 = [0]*len(me1.vertices)*3
+    me1.vertices.foreach_get('co',verts1)
+    verts1 = np.array(verts1).reshape((-1,3))
+    uv_verts = (verts1*(sides-1))%1
+    uv_quad = (verts1*(sides-1))//1
+    uv_quad = uv_quad.astype(int)
+    u0 = uv_quad[:,0]
+    u1 = np.clip(uv_quad[:,0]+1, 0, sides-1)
+    v0 = uv_quad[:,1]
+    v1 = np.clip(uv_quad[:,1]+1, 0, sides-1)
+
+    vx = uv_verts[:,0,np.newaxis]
+    vy = uv_verts[:,1,np.newaxis]
+    vz = verts1[:,2,np.newaxis]
+
+    for m in (1,2,3,4):
+        verts_id = patch_from_material_index(bm,m)
+
+        verts0_co = verts0[verts_id,:]
+        v00 = verts0_co[u0, v0, :]
+        v10 = verts0_co[u1, v0, :]
+        v01 = verts0_co[u0, v1, :]
+        v11 = verts0_co[u1, v1, :]
+        co2 = np_lerp2(v00, v10, v01, v11, vx, vy)
+
+        normals0_co = normals0[verts_id,:]
+        v00 = normals0_co[u0, v0, :]
+        v10 = normals0_co[u1, v0, :]
+        v01 = normals0_co[u0, v1, :]
+        v11 = normals0_co[u1, v1, :]
+        nor2 = np_lerp2(v00, v10, v01, v11, vx, vy)
+        co2 = co2 + nor2*vz
+
+        co = list(co2.flatten())
+        me1.vertices.foreach_set('co',co)
+        me1.update()
+
+        bm.from_mesh(me1)
+
+    me.update()
+
+    del_materials = [1,2,3,4]
+
+    # ROUNDED SEAL
+    if 'Seal' in bpy.data.objects.keys():
+        bpy.data.collections['Borders'].hide_viewport = False
+        ob1 = bpy.data.objects[context.scene.myfacemask_border]
+        ob1.hide_viewport = False
+        me1 = simple_to_mesh(ob1)
+        bpy.data.collections['Borders'].hide_viewport = True
+        ob1.hide_viewport = True
+        verts1 = [0]*len(me1.vertices)*3
+        me1.vertices.foreach_get('co',verts1)
+        verts1 = np.array(verts1).reshape((-1,3))
+
+        vx = verts1[:,0,np.newaxis]
+        vy = verts1[:,1,np.newaxis]
+        vz = verts1[:,2,np.newaxis]
+        if '_PERP' in ob1.data.name:
+            fixed = vz > 0.001
+            vx[fixed] = 0.5 + (vx[fixed]-0.5)/thickness
+
+        for f in me.polygons:
+            if f.material_index == 5:
+                v00 = verts0[f.vertices[0]]
+                if v00[2] > 25:
+                    v10 = verts0[f.vertices[3]]
+                    v01 = verts0[f.vertices[1]]
+                    v11 = verts0[f.vertices[2]]
+                    co2 = np_lerp2(v00, v10, v01, v11, vx, vy)
+                    if '_PERP' in ob1.data.name:
+                        nor2 = np.array((0,0,1))
+                    else:
+                        n00 = normals0[f.vertices[0]]
+                        n10 = normals0[f.vertices[3]]
+                        n01 = normals0[f.vertices[1]]
+                        n11 = normals0[f.vertices[2]]
+                        n00 = n10 = (n00+n10)/2
+                        n01 = n11 = (n01+n11)/2
+                        nor2 = np_lerp2(n00, n10, n01, n11, vx, vy)
+                    co2 = co2 + nor2*vz
+                    co = list(co2.flatten())
+                    me1.vertices.foreach_set('co',co)
+                    bm.from_mesh(me1)
+        del_materials.append(5)
+
+    del_faces = [f for f in bm.faces if f.material_index in del_materials and f.calc_center_bounds()[2]>25]
+    bmesh.ops.delete(bm, geom=del_faces, context='FACES')
+    bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=0.01)
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+
+    bm.to_mesh(me)
+    bm.free()
+
+    # Add a final Subdivision Surface
+    subsurf = surf.modifiers.new(name='Subsurf', type='SUBSURF')
+    subsurf.use_creases = False
+    bpy.ops.object.modifier_apply(apply_as='DATA', modifier='Subsurf')
+    bool = surf.modifiers.new(name='Bool', type='BOOLEAN')
+    bool.operation = 'UNION'
+    bool.object = bpy.data.objects[context.scene.myfacemask_filter]
+    bpy.ops.object.modifier_apply(apply_as='DATA', modifier='Bool')
+
+    '''
+    filter = bpy.data.objects[context.scene.myfacemask_filter]
+    filter.select_set(True)
+    bpy.context.view_layer.objects.active = filter
+    bpy.ops.object.mode_set(mode='OBJECT')
+    bpy.ops.object.duplicate_move()
+
+    ob = context.object
+
+    '''
+
+    surf.name = 'Mask'
+    #for m in surf.modifiers: m.show_viewport = True
+    #for m in surf.modifiers:
+    #    try:
+    #        bpy.ops.object.modifier_apply(apply_as='DATA', modifier=m.name)
+    #    except:
+    #        surf.modifiers.remove(m)
+    surf.parent = None
+    bpy.ops.object.location_clear(clear_delta=False)
+    bpy.ops.object.rotation_clear(clear_delta=False)
+    try: bpy.ops.view3d.view_selected()
+    except: pass
+    for o in scene.objects: o.hide_viewport = True
+    surf.hide_viewport = False
+    surf.select_set(True)
+    bpy.ops.object.shade_flat()
+    bpy.ops.object.mode_set(mode='EDIT')
+    context.space_data.overlay.show_statvis = True
+    context.scene.tool_settings.statvis.type = 'OVERHANG'
+    bpy.ops.mesh.select_mode(use_extend=False, use_expand=False, type='FACE')
+    bpy.ops.mesh.select_all(action='DESELECT')
+    context.scene.tool_settings.use_snap = False
+    context.space_data.overlay.show_edge_crease = False
+    context.space_data.overlay.show_edge_bevel_weight = False
+    bpy.data.collections['Filters'].hide_viewport = True
+    return
+
+def update_assets():
+    coll = bpy.data.collections['Hangs']
+    types = [(o.name, o.name,'') for o in coll.objects]
+    bpy.types.Scene.myfacemask_hangs =  EnumProperty(
+        items = types,
+        default = types[-1][0],
+        name = "Hangs Type",
+        update = update_details
+    )
+    coll = bpy.data.collections['Borders']
+    types = [(o.name, o.name,'') for o in coll.objects]
+    bpy.types.Scene.myfacemask_border =  EnumProperty(
+        items = types,
+        default = types[-1][0],
+        name = "Border Type",
+        update = update_details
+    )
+    coll = bpy.data.collections['Filters']
+    types = [(o.name.split('Filter_')[1], o.name.split('Filter_')[1],'') for o in coll.objects if 'Filter_' in o.name]
+    if ('WASP','WASP','') in types: default_filter = 'WASP'
+    else: default_filter = types[-1][0]
+    bpy.types.Scene.myfacemask_model =  EnumProperty(
+        items = types,
+        default = default_filter,
+        name = "Model Type",
+        update = update_model
+    )
+    scn = bpy.context.scene
+    scn.myfacemask_filter = 'Filter_' + scn.myfacemask_model
+    scn.myfacemask_surface = 'Surface_' + scn.myfacemask_model
 
 def delete_all():
     for o in bpy.data.objects:
@@ -83,6 +378,23 @@ def set_clipping_planes():
     bpy.context.space_data.clip_start = 1
     bpy.context.space_data.clip_end = 1e+004
 
+def patch_from_material_index(bm, index):
+    uv_lay = bm.loops.layers.uv.active
+    verts = {}
+    for f in bm.faces:
+        if f.material_index == index:
+            loop = f.loops
+            for l in f.loops:
+                co = l[uv_lay].uv
+                verts[l.vert.index] = co[0] + 100*co[1]
+    ids = tuple(verts.keys())
+    uv = tuple(verts.values())
+    side = int(sqrt(len(uv)))
+    ids = np.array(ids)
+    uv = np.array(uv)
+    u_sort = np.argsort(uv, axis=0)
+    ids = ids[u_sort].reshape((side,side))
+    return ids
 
 class myfacemask_setup(bpy.types.Operator):
     bl_idname = "scene.myfacemask_setup"
@@ -120,6 +432,15 @@ class myfacemask_setup(bpy.types.Operator):
 
         bpy.data.scenes.remove(scn)
 
+        for c in bpy.data.collections:
+            c.hide_viewport = True
+
+        update_assets()
+
+        for ob in bpy.data.collections['Filters'].objects:
+            if 'Filter_' in ob.name:
+                ob.lock_scale = (True, True, True)
+
         set_mm()
         set_clipping_planes()
 
@@ -141,7 +462,7 @@ class myfacemask_remesh(bpy.types.Operator):
     def poll(cls, context):
         try:
             ob = context.object
-            exclude = ['Filter','Mask','Mask_Surface','Hole_01', 'Hole_02']
+            exclude = [context.scene.myfacemask_filter,'Mask',context.scene.myfacemask_surface,'Hole_01', 'Hole_02']
             return not context.object.hide_viewport and ob.name not in exclude
         except: return False
 
@@ -166,7 +487,7 @@ class myfacemask_mirror_border(bpy.types.Operator):
     @classmethod
     def poll(cls, context):
         try:
-            mod = bpy.data.objects['Mask_Surface'].modifiers['curve_project_01']
+            mod = bpy.data.objects[context.scene.myfacemask_surface].modifiers['curve_project_01']
             ob = bpy.data.objects['ContourCurve']
             return context.object.name != 'Mask'
         except: return False
@@ -179,7 +500,7 @@ class myfacemask_mirror_border(bpy.types.Operator):
         except:
             mirror = ob.modifiers.new(name='Mirror',type='MIRROR')
             project = ob.modifiers.new(name='Project',type='SHRINKWRAP')
-            mirror.mirror_object = bpy.data.objects['Filter']
+            mirror.mirror_object = bpy.data.objects[context.scene.myfacemask_filter]
             mirror.use_bisect_axis[0] = True
             project.target = bpy.data.objects['Face']
         return {'FINISHED'}
@@ -195,7 +516,7 @@ class myfacemask_mirror_border_flip(bpy.types.Operator):
     def poll(cls, context):
         try:
             ob = bpy.data.objects['ContourCurve']
-            mod1 = bpy.data.objects['Mask_Surface'].modifiers['curve_project_01']
+            mod1 = bpy.data.objects[context.scene.myfacemask_surface].modifiers['curve_project_01']
             mod = ob.modifiers['Mirror']
             return context.object.name != 'Mask' and mod.show_viewport
         except: return False
@@ -309,6 +630,7 @@ class myfacemask_adapt_mask(Operator):
         #col.prop(self,'remove_open_curves')
 
     def execute(self, context):
+        scene = context.scene
         start_time = timeit.default_timer()
         try:
             check = context.object.vertex_groups[0]
@@ -436,6 +758,7 @@ class myfacemask_adapt_mask(Operator):
         bm.free()
 
         bpy.data.collections['MyFaceMask'].hide_viewport = False
+        bpy.data.collections['Filters'].hide_viewport = False
 
         bpy.ops.object.convert(target='MESH')
         curve_object = context.object
@@ -461,21 +784,28 @@ class myfacemask_adapt_mask(Operator):
         if nor_vec.y > 0:
             nor_vec *= -1
 
-        filter = bpy.data.objects['Filter']
-        filter.location = mid_point + nor_vec*60
-        filter.rotation_euler[0] = atan2(cos(nor_vec.y), sin(nor_vec.z))+pi
-        matr = filter.matrix_local
-        filter.location -= nor_vec.normalized().cross(Vector((1,0,0)))*15
-        filter.location.x = 0
-
+        coll = bpy.data.collections['Filters'].objects
+        #filter = bpy.data.objects[context.scene.myfacemask_filter]
+        for filter in coll:
+            if 'Filter_' in filter.name:
+                filter.location = mid_point + nor_vec*60
+                filter.rotation_euler[0] = atan2(cos(nor_vec.y), sin(nor_vec.z))+pi
+                matr = filter.matrix_local
+                filter.location -= nor_vec.normalized().cross(Vector((1,0,0)))*15
+                filter.location.x = 0
+                filter.hide_viewport = filter.name != scene.myfacemask_filter
 
         ### adapt mask
-        mask_srf = bpy.data.objects['Mask_Surface']
-        mask_srf.modifiers['curve_project_01'].target = curve_object
-        #mask_srf.modifiers['curve_project_02'].target = curve_object
-        mask_srf.modifiers['avoid_face_intersections'].target = ob0
-        mask_srf.modifiers['adapt_to_face'].target = ob0
-        mask_srf.modifiers['adapt_to_face_02'].target = ob0
+        #mask_srf = bpy.data.objects[context.scene.myfacemask_surface]
+        for mask_srf in [o for o in coll if 'Surface_' in o.name]:
+            mask_srf.modifiers['curve_project_01'].target = curve_object
+            #mask_srf.modifiers['curve_project_02'].target = curve_object
+            mask_srf.modifiers['avoid_face_intersections'].target = ob0
+            mask_srf.modifiers['adapt_to_face'].target = ob0
+            mask_srf.modifiers['adapt_to_face_02'].target = ob0
+            mask_srf.hide_viewport = mask_srf.name != scene.myfacemask_surface
+
+        update_assets()
 
         print("Contour Curves, total time: " + str(timeit.default_timer() - start_time) + " sec")
         return {'FINISHED'}
@@ -489,15 +819,15 @@ class myfacemask_edit_mask(Operator):
     @classmethod
     def poll(cls, context):
         keys = bpy.data.objects.keys()
-        if 'Mask_Surface' in keys and 'Face' in keys:
-            ob = bpy.data.objects['Mask_Surface']
+        if context.scene.myfacemask_surface in keys and 'Face' in keys:
+            ob = bpy.data.objects[context.scene.myfacemask_surface]
             if 'adapt_to_face' in ob.modifiers.keys():
                 return ob.modifiers['adapt_to_face'].target != None
             else: return False
         else: return False
 
     def invoke(self, context, event):
-        mask_srf = bpy.data.objects['Mask_Surface']
+        mask_srf = bpy.data.objects[context.scene.myfacemask_surface]
         if 'Mirror' in mask_srf.modifiers.keys():
             return context.window_manager.invoke_props_dialog(self, width=350)
         else: return self.execute(context)
@@ -511,7 +841,7 @@ class myfacemask_edit_mask(Operator):
     def execute(self, context):
         bpy.ops.object.mode_set(mode='OBJECT')
         for o in context.scene.objects: o.select_set(False)
-        mask = bpy.data.objects['Mask_Surface']
+        mask = bpy.data.objects[context.scene.myfacemask_surface]
         mask.select_set(True)
         bpy.context.view_layer.objects.active = mask
 
@@ -531,6 +861,10 @@ class myfacemask_edit_mask(Operator):
             bpy.ops.object.modifier_apply(apply_as='DATA', modifier="Mirror")
         if 'Bevel' in mods:
             bpy.ops.object.modifier_apply(apply_as='DATA', modifier="Bevel")
+            mask.data.polygons[1].material_index = 1
+            mask.data.polygons[71].material_index = 2
+            mask.data.polygons[6].material_index = 3
+            mask.data.polygons[19].material_index = 4
         if 'Subdivision' in mods:
             bpy.ops.object.modifier_apply(apply_as='DATA', modifier="Subdivision")
         if 'curve_project_01' in mods:
@@ -539,6 +873,7 @@ class myfacemask_edit_mask(Operator):
         mask.modifiers["Hook_Border"].object = bpy.data.objects['ContourCurve']
         #bpy.ops.object.modifier_apply(apply_as='DATA', modifier="curve_project_02")
         bpy.ops.object.mode_set(mode='EDIT')
+        bpy.ops.mesh.select_all(action='DESELECT')
         bpy.ops.mesh.select_mode(use_extend=False, use_expand=False, type='VERT')
         bpy.ops.wm.tool_set_by_index(index=0)
         bpy.context.scene.tool_settings.use_snap = False
@@ -574,7 +909,7 @@ class myfacemask_edit_mask_off(Operator):
 
     @classmethod
     def poll(cls, context):
-        try: return context.object.name == 'Mask_Surface'
+        try: return context.object.name == context.scene.myfacemask_surface
         except: return False
 
     def execute(self, context):
@@ -676,100 +1011,116 @@ class MYFACEMASK_PT_weight(Panel):
             row = col.row(align=True)
             row.operator("ed.undo", icon='LOOP_BACK')
             row.operator("ed.redo", icon='LOOP_FORWARDS')
-            col.separator()
-            col.label(text="Import scan:", icon="OUTLINER_OB_ARMATURE")
-            row = col.row(align=True)
-            row.operator("import_scene.obj", text="OBJ", icon='IMPORT')
-            row.operator("import_mesh.stl", text="STL", icon='IMPORT')
-            col.separator()
-            col.operator("object.myfacemask_remesh", icon="MOD_REMESH", text="Remesh")
-            col.separator()
-            col.label(text="Adapt mask:")
-            col.operator("object.myfacemask_weight_toggle", icon="BRUSH_DATA", text="Define area")
+            if 'ContourCurve' not in bpy.data.objects.keys():
+                col.separator()
+                col.label(text="Import scan:", icon="OUTLINER_OB_ARMATURE")
+                row = col.row(align=True)
+                row.operator("import_scene.obj", text="OBJ", icon='IMPORT')
+                row.operator("import_mesh.stl", text="STL", icon='IMPORT')
+                col.separator()
+                col.operator("object.myfacemask_remesh", icon="MOD_REMESH", text="Remesh")
+                col.separator()
+                col.label(text="Adapt mask:")
+                col.operator("object.myfacemask_weight_toggle", icon="BRUSH_DATA", text="Define area")
 
-            if mode == 'WEIGHT_PAINT':
-                weight = context.scene.tool_settings.unified_paint_settings.weight
-                if weight < 0.5:
-                    col.operator("object.myfacemask_weight_add_subtract", icon="SELECT_EXTEND", text='Add')
+                if mode == 'WEIGHT_PAINT':
+                    weight = context.scene.tool_settings.unified_paint_settings.weight
+                    if weight < 0.5:
+                        col.operator("object.myfacemask_weight_add_subtract", icon="SELECT_EXTEND", text='Add')
+                    else:
+                        col.operator("object.myfacemask_weight_add_subtract", icon="SELECT_SUBTRACT", text='Subtract')
+                    #col.prop(context.scene.tool_settings.unified_paint_settings, 'weight')
+                    col.prop(context.scene.tool_settings.unified_paint_settings, 'size')
+                    col.separator()
+
+                col.operator("object.myfacemask_adapt_mask", icon="USER", text='Adapt mask')
+            elif 'Mask' not in bpy.data.objects.keys():
+
+                col.separator()
+                col.label(text="Filter Model:", icon='PRESET')
+                col.prop(context.scene, 'myfacemask_model', text='')
+                col.separator()
+                filter = bpy.data.objects[context.scene.myfacemask_filter]
+                if filter.data.shape_keys != None:
+                    drivers = []
+                    try:
+                        for dr in filter.data.shape_keys.animation_data.drivers:
+                            drivers.append(dr.data_path.split('"')[1])
+                    except: pass
+                    for sk in filter.data.shape_keys.key_blocks[1:]:
+                        if sk.name in drivers: continue
+                        col.prop(sk, 'value', text=sk.name)
+                    col.separator()
+                col.label(text="Symmetry:")
+                try:
+                    curve = bpy.data.objects['ContourCurve']
+                    mirror = curve.modifiers['Mirror'].show_viewport
+                except: mirror = False
+                if mirror:
+                    col.operator("object.myfacemask_mirror_border", icon="MOD_MIRROR", text="Symmetric border off")
                 else:
-                    col.operator("object.myfacemask_weight_add_subtract", icon="SELECT_SUBTRACT", text='Subtract')
-                #col.prop(context.scene.tool_settings.unified_paint_settings, 'weight')
-                col.prop(context.scene.tool_settings.unified_paint_settings, 'size')
+                    col.operator("object.myfacemask_mirror_border", icon="MOD_MIRROR", text="Symmetric border on")
+                col.operator("object.myfacemask_mirror_border_flip", icon="ARROW_LEFTRIGHT", text="Invert symmetry")
+
                 col.separator()
-
-            col.operator("object.myfacemask_adapt_mask", icon="USER", text='Adapt mask')
-            col.separator()
-            try:
-                curve = bpy.data.objects['ContourCurve']
-                mirror = curve.modifiers['Mirror'].show_viewport
-            except: mirror = False
-            if mirror:
-                col.operator("object.myfacemask_mirror_border", icon="MOD_MIRROR", text="Symmetric border off")
-            else:
-                col.operator("object.myfacemask_mirror_border", icon="MOD_MIRROR", text="Symmetric border on")
-            col.operator("object.myfacemask_mirror_border_flip", icon="ARROW_LEFTRIGHT", text="Invert symmetry")
-
-            col.separator()
-            col.label(text="Adjust:")
-            set_bool = False
-            my_areas = context.screen.areas
-            for area in my_areas:
-                for space in area.spaces:
-                    if space.type == 'VIEW_3D':
-                        set_bool = not space.shading.show_xray
-            if set_bool:
-                col.operator("object.myfacemask_place_filter", icon="GIZMO", text='Align filter on')
-            else:
-                col.operator("object.myfacemask_place_filter", icon="GIZMO", text='Align filter off')
-            col.separator()
-
-            if mode != 'EDIT':
-                col.operator("object.myfacemask_edit_mask", icon="EDITMODE_HLT", text="Manual editing")
-                col.separator()
-            else:
-                col.operator("object.myfacemask_edit_mask_off", icon="OBJECT_DATA", text="End editing")
-                col.separator()
-
-            if 'Hole_01' in bpy.data.objects.keys():
-                hole = bpy.data.objects['Hole_01']
-            elif 'Hole_02' in bpy.data.objects.keys():
-                hole = bpy.data.objects['Hole_02']
-            else:
-                hole = None
-            if hole != None:
-                if hole.hide_viewport:
-                    col.operator("object.myfacemask_holes_snap", icon="CLIPUV_DEHLT", text="Show holes")
+                col.label(text="Adjust:")
+                set_bool = False
+                my_areas = context.screen.areas
+                for area in my_areas:
+                    for space in area.spaces:
+                        if space.type == 'VIEW_3D':
+                            set_bool = not space.shading.show_xray
+                if set_bool:
+                    col.operator("object.myfacemask_place_filter", icon="GIZMO", text='Align filter on')
                 else:
-                    col.operator("object.myfacemask_holes_snap", icon="CLIPUV_DEHLT", text="Hide holes")
-
-            if name != 'Mask' and name != '':
+                    col.operator("object.myfacemask_place_filter", icon="GIZMO", text='Align filter off')
                 col.separator()
-                mask = bpy.data.objects['Mask_Surface']
-                if 'Displace' in mask.modifiers.keys():
-                    mod = mask.modifiers['Displace']
-                    col.prop(mod, 'strength', text='Nose pressure')
-                if 'Thickness' in mask.modifiers.keys():
-                    mod = mask.modifiers['Thickness']
-                    #col.prop(mod, 'thickness', text='Thickness')
-                    col.prop(context.scene, 'myfacemask_thickness', text='Thickness')
-                if 'avoid_face_intersections' in mask.modifiers.keys():
-                    mod = mask.modifiers['avoid_face_intersections']
-                    col.prop(mod, 'offset', text='Offset')
 
-            col.separator()
-            col.label(text="Prepare 3D print:")
-            col.operator("object.myfacemask_boolean", icon="MATSHADERBALL", text="Prepare model")
-            col.separator()
+                if mode != 'EDIT':
+                    col.operator("object.myfacemask_edit_mask", icon="EDITMODE_HLT", text="Manual editing")
+                    col.separator()
+                else:
+                    col.operator("object.myfacemask_edit_mask_off", icon="OBJECT_DATA", text="End editing")
+                    col.separator()
 
-            col.label(text="Identity:")
-            if mode != 'SCULPT':
-                col.prop(context.scene, 'myfacemask_id', text='', icon='COPY_ID')
-                col.operator('scene.myfacemask_generate_tag', icon='LINE_DATA')
+                if name != 'Mask' and name != '':
+                    col.separator()
+                    mask = bpy.data.objects[context.scene.myfacemask_surface]
+                    if 'Displace' in mask.modifiers.keys():
+                        mod = mask.modifiers['Displace']
+                        col.prop(mod, 'strength', text='Nose pressure')
+                    if 'Thickness' in mask.modifiers.keys():
+                        mod = mask.modifiers['Thickness']
+                        #col.prop(mod, 'thickness', text='Thickness')
+                        col.prop(context.scene, 'myfacemask_thickness', text='Thickness')
+                    if 'avoid_face_intersections' in mask.modifiers.keys():
+                        mod = mask.modifiers['avoid_face_intersections']
+                        col.prop(mod, 'offset', text='Offset')
+
                 col.separator()
-                col.label(text="Export:")
-                col.operator("export_mesh.stl", text="STL", icon='EXPORT').use_selection = True
+                col.label(text="Prepare 3D print:")
+                col.operator("object.myfacemask_boolean", icon="MATSHADERBALL", text="Prepare model")
             else:
-                col.operator('object.myfacemask_tag_mask_off', icon='OBJECT_DATA', text='Done')
+
+                col.separator()
+                col.label(text="Hangs Types:")
+                col.prop(context.scene, 'myfacemask_hangs', text='')
+
+                col.separator()
+                col.label(text="Border Profile:")
+                col.prop(context.scene, 'myfacemask_border', text='')
+
+                col.separator()
+                col.label(text="Identity:")
+                if mode != 'SCULPT':
+                    col.prop(context.scene, 'myfacemask_id', text='', icon='COPY_ID')
+                    col.operator('scene.myfacemask_generate_tag', icon='LINE_DATA')
+                    col.separator()
+                    col.label(text="Export:")
+                    col.operator("export_mesh.stl", text="STL", icon='EXPORT').use_selection = True
+                else:
+                    col.operator('object.myfacemask_tag_mask_off', icon='OBJECT_DATA', text='Done')
+
 
 class myfacemask_generate_tag(Operator):
     bl_idname = "scene.myfacemask_generate_tag"
@@ -859,59 +1210,12 @@ class myfacemask_boolean(Operator):
     @classmethod
     def poll(cls, context):
         try:
-            ob = bpy.data.objects['Mask_Surface']
-            return ob.modifiers['adapt_to_face'].target != None
+            ob = bpy.data.objects[context.scene.myfacemask_surface]
+            return ob.modifiers['adapt_to_face'].target != None and ob.mode == 'OBJECT'
         except: return False
 
     def execute(self, context):
-        scene = context.scene
-        for o in scene.objects: o.select_set(False)
-
-        surf = bpy.data.objects['Mask_Surface']
-        surf.select_set(True)
-        bpy.context.view_layer.objects.active = surf
-        thickness = surf.modifiers['Thickness'].thickness
-        for m in surf.modifiers:
-            try:
-                bpy.ops.object.modifier_apply(apply_as='DATA', modifier=m.name)
-            except: pass
-        surf.data.update()
-        me = surf.data
-        n_verts = len(me.vertices)
-        n_half = int(n_verts/2)
-        for i in range(n_half):
-            v0 = me.vertices[i]
-            v1 = me.vertices[i+n_half]
-            v2 = v1.co-v0.co
-            v2 = Vector((v2.x,v2.y,0))
-            v1.co = v2.normalized()*thickness + v0.co
-
-        filter = bpy.data.objects['Filter']
-        filter.select_set(True)
-        bpy.context.view_layer.objects.active = filter
-        bpy.ops.object.mode_set(mode='OBJECT')
-        bpy.ops.object.duplicate_move()
-
-        ob = context.object
-        ob.name = 'Mask'
-        for m in ob.modifiers: m.show_viewport = True
-        for m in ob.modifiers:
-            try:
-                bpy.ops.object.modifier_apply(apply_as='DATA', modifier=m.name)
-            except:
-                ob.modifiers.remove(m)
-        bpy.ops.object.location_clear(clear_delta=False)
-        bpy.ops.object.rotation_clear(clear_delta=False)
-        bpy.ops.view3d.view_selected()
-        for o in scene.objects: o.hide_viewport = True
-        ob.hide_viewport = False
-        ob.select_set(True)
-        bpy.ops.object.mode_set(mode='EDIT')
-        bpy.context.space_data.overlay.show_statvis = True
-        bpy.context.scene.tool_settings.statvis.type = 'OVERHANG'
-        bpy.ops.mesh.select_mode(use_extend=False, use_expand=False, type='FACE')
-        bpy.ops.mesh.select_all(action='DESELECT')
-        bpy.context.scene.tool_settings.use_snap = False
+        update_details(self, context)
         return {'FINISHED'}
 
 class myfacemask_holes_snap(Operator):
@@ -923,7 +1227,7 @@ class myfacemask_holes_snap(Operator):
     @classmethod
     def poll(cls, context):
         try:
-            ob = bpy.data.objects['Mask_Surface']
+            ob = bpy.data.objects[context.scene.myfacemask_surface]
             return ob.modifiers['adapt_to_face'].target != None and context.object.mode == 'OBJECT'
         except: return False
 
@@ -943,10 +1247,10 @@ class myfacemask_holes_snap(Operator):
             set_bool = objects["Hole_02"].hide_viewport
 
         if set_bool:
-            bpy.data.objects['Mask_Surface'].select_set(True)
+            bpy.data.objects[context.scene.myfacemask_surface].select_set(True)
             bpy.ops.view3d.view_axis(type='RIGHT')
             bpy.ops.view3d.view_selected()
-            bpy.data.objects['Mask_Surface'].select_set(False)
+            bpy.data.objects[context.scene.myfacemask_surface].select_set(False)
 
         context.space_data.show_gizmo_object_translate = set_bool
         context.space_data.show_gizmo_object_rotate = False
@@ -971,13 +1275,13 @@ class myfacemask_place_filter(Operator):
     @classmethod
     def poll(cls, context):
         try:
-            ob = bpy.data.objects['Filter']
-            ob = bpy.data.objects['Mask_Surface']
+            ob = bpy.data.objects[context.scene.myfacemask_filter]
+            ob = bpy.data.objects[context.scene.myfacemask_surface]
             return ob.modifiers['adapt_to_face'].target != None
         except: return False
 
     def execute(self, context):
-        ob = bpy.data.objects['Filter']
+        ob = bpy.data.objects[context.scene.myfacemask_filter]
         for o in bpy.data.objects: o.select_set(False)
         set_bool = False
         my_areas = bpy.context.screen.areas
@@ -989,10 +1293,10 @@ class myfacemask_place_filter(Operator):
         if set_bool:
             ob.select_set(True)
             context.view_layer.objects.active = ob
-            bpy.data.objects['Mask_Surface'].select_set(True)
+            bpy.data.objects[context.scene.myfacemask_surface].select_set(True)
             bpy.ops.view3d.view_axis(type='RIGHT')
             bpy.ops.view3d.view_selected()
-            bpy.data.objects['Mask_Surface'].select_set(False)
+            bpy.data.objects[context.scene.myfacemask_surface].select_set(False)
         context.space_data.show_gizmo_object_translate = set_bool
         context.space_data.show_gizmo_object_rotate = set_bool
         context.scene.tool_settings.use_snap = False

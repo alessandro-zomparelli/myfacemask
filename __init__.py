@@ -27,7 +27,7 @@
 bl_info = {
     "name": "MyFaceMask",
     "author": "Alessandro Zomparelli with WASP",
-    "version": (0, 1, 4),
+    "version": (0, 2, 0),
     "blender": (2, 82, 0),
     "location": "Viewport > Right panel",
     "description": "Custom made 3D printable breathing Mask, based on 3D scanned face",
@@ -143,9 +143,11 @@ else:
     from . import utils
 
 import bpy
-from bpy.props import PointerProperty, CollectionProperty, BoolProperty
+from bpy.props import PointerProperty, CollectionProperty, BoolProperty, EnumProperty
+from bpy.app.handlers import persistent
 
 classes = (
+    myfacemask_tools.myfacemask_props,
     myfacemask_tools.myfacemask_remesh,
     myfacemask_tools.myfacemask_adapt_mask,
     myfacemask_tools.myfacemask_weight_toggle,
@@ -164,24 +166,51 @@ classes = (
 )
 
 def update_thickness(self, context):
+    myfacemask_tools.update_assets()
     t = context.scene.myfacemask_thickness
+    #try:
+        #coll = bpy.data.collections['Filters'].objects
+        #for o in coll:
+        #    if 'Filter_' in o.name and 'Displace' in o.modifiers.keys():
+        #        o.modifiers['Displace'].strength = max((t-1.6)*1.6,0)
+    #except: pass
     try:
-        bpy.data.objects['Filter'].modifiers['Displace'].strength = max((t-1.6)*1.3,0)
-    except: pass
-    try:
-        bpy.data.objects['Mask_Surface'].modifiers['Thickness'].thickness = t
+        coll = bpy.data.collections['Filters'].objects
+        for o in coll:
+            if 'Surface_' in o.name:
+                o.modifiers['Thickness'].thickness = t
     except: pass
     return
+
+@persistent
+def load_handler(dummy):
+    myfacemask_tools.update_assets()
 
 def register():
     from bpy.utils import register_class
     for cls in classes:
         bpy.utils.register_class(cls)
-    bpy.types.Scene.myfacemask_id = bpy.props.StringProperty(name='ID', description='Identification code to manually emboss on the surface')
+    #myfacemask_tools.update_assets()
+
+    bpy.types.Scene.myfacemask_hangs = ""#EnumProperty()
+    bpy.types.Scene.myfacemask_border = ""#EnumProperty()
+    bpy.types.Scene.myfacemask_model = ""#EnumProperty()
+    #bpy.types.Scene.myfacemask = EnumProperty(type = myfacemask_tools.myfacemask_props)
+
+    bpy.types.Scene.myfacemask_filter = bpy.props.StringProperty()
+    bpy.types.Scene.myfacemask_surface = bpy.props.StringProperty()
+
+    #myfacemask_tools.update_assets()
+    bpy.app.handlers.load_post.append(load_handler)
+
+    bpy.types.Scene.myfacemask_id = bpy.props.StringProperty(
+        name='ID',
+        description='Identification code to manually emboss on the surface',
+        default = 'WASP')
     bpy.types.Scene.myfacemask_thickness = bpy.props.FloatProperty(
         name='Thickness',
         description='Mask thickness',
-        min=0,
+        min=0.1,
         max=5,
         default=1.6,
         update=update_thickness
