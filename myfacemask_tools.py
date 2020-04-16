@@ -139,27 +139,32 @@ def update_details(self, context):
     surf.select_set(True)
     bpy.context.view_layer.objects.active = surf
     thickness = surf.modifiers['Thickness'].thickness
-    for m in surf.modifiers:
-        if m.type == 'HOOK':
-            if m.object == None:
-                surf.modifiers.remove(m)
-                continue
-        if m.type == 'DISPLACE':
-            if m.strength == 0:
-                surf.modifiers.remove(m)
-                continue
-        try:
-            type = m.type
-            bpy.ops.object.modifier_apply(apply_as='DATA', modifier=m.name)
-            if type == 'BEVEL':
-                surf.data.polygons[1].material_index = 1
-                surf.data.polygons[71].material_index = 2
-                surf.data.polygons[6].material_index = 3
-                surf.data.polygons[19].material_index = 4
-        except: pass
 
-    surf.data.update()
-    me = surf.data
+    if 'Bevel' in surf.modifiers.keys():
+        show_mod = [m.show_viewport for m in surf.modifiers]
+        for m in surf.modifiers: m.show_viewport = False
+        del_mod = []
+        for m in surf.modifiers:
+            if len(show_mod) > 0:
+                m.show_viewport = show_mod.pop(0)
+                del_mod.append(m)
+                if m.type == 'BEVEL':
+                    me = simple_to_mesh(surf)
+                    me.polygons[1].material_index = 1
+                    me.polygons[71].material_index = 2
+                    me.polygons[6].material_index = 3
+                    me.polygons[19].material_index = 4
+                    break
+        for m in del_mod: surf.modifiers.remove(m)
+        surf.data = me
+        for m in surf.modifiers:
+            if len(show_mod) > 0:
+                m.show_viewport = show_mod.pop(0)
+        surf.modifiers.update()
+    me = simple_to_mesh(surf)
+    surf.modifiers.clear()
+    surf.data = me
+
     n_verts = len(me.vertices)
     n_half = int(n_verts/2)
     for i in range(n_half):
@@ -455,7 +460,7 @@ class myfacemask_remesh(bpy.types.Operator):
     bl_options = {'REGISTER', 'UNDO'}
 
     detail : bpy.props.IntProperty(
-        name="Detail", default=8, soft_min=3, soft_max=10,
+        name="Detail", default=7, soft_min=3, soft_max=10,
         description="Octree Depth")
 
     @classmethod
@@ -468,7 +473,7 @@ class myfacemask_remesh(bpy.types.Operator):
 
     def execute(self, context):
         #bpy.ops.view3d.view_selected()
-        bpy.ops.object.modifier_add(type='REMESH')
+        context.object.modifiers.new(name='Remesh',type='REMESH')
         context.object.modifiers["Remesh"].mode = 'SMOOTH'
         context.object.modifiers["Remesh"].octree_depth = self.detail
         context.object.name = 'Face'
@@ -856,22 +861,39 @@ class myfacemask_edit_mask(Operator):
         face.lock_scale[1] = True
         face.lock_scale[2] = True
 
-        mods = mask.modifiers.keys()
-        if 'Mirror' in mods:
-            bpy.ops.object.modifier_apply(apply_as='DATA', modifier="Mirror")
-        if 'Bevel' in mods:
-            bpy.ops.object.modifier_apply(apply_as='DATA', modifier="Bevel")
-            mask.data.polygons[1].material_index = 1
-            mask.data.polygons[71].material_index = 2
-            mask.data.polygons[6].material_index = 3
-            mask.data.polygons[19].material_index = 4
-        if 'Subdivision' in mods:
-            bpy.ops.object.modifier_apply(apply_as='DATA', modifier="Subdivision")
-        if 'curve_project_01' in mods:
-            bpy.ops.object.modifier_apply(apply_as='DATA', modifier="curve_project_01")
+        if 'Bevel' in mask.modifiers.keys():
+            show_mod = [m.show_viewport for m in mask.modifiers]
+            for m in mask.modifiers: m.show_viewport = False
+            del_mod = []
+            for m in mask.modifiers:
+                if len(show_mod) > 0:
+                    m.show_viewport = show_mod.pop(0)
+                    del_mod.append(m)
+                    if m.type == 'BEVEL':
+                        me = simple_to_mesh(mask)
+                        me.polygons[1].material_index = 1
+                        me.polygons[71].material_index = 2
+                        me.polygons[6].material_index = 3
+                        me.polygons[19].material_index = 4
+                        break
+            for m in del_mod: mask.modifiers.remove(m)
+            mask.data = me
+            del_mod = []
+            for m in mask.modifiers:
+                if len(show_mod) > 0:
+                    m.show_viewport = show_mod.pop(0)
+                    del_mod.append(m)
+                    if m.name == 'curve_project_01':
+                        me = simple_to_mesh(mask)
+                        break
+            for m in del_mod: mask.modifiers.remove(m)
+            mask.data = me
+            for m in mask.modifiers:
+                if len(show_mod) > 0:
+                    m.show_viewport = show_mod.pop(0)
 
-        mask.modifiers["Hook_Border"].object = bpy.data.objects['ContourCurve']
-        #bpy.ops.object.modifier_apply(apply_as='DATA', modifier="curve_project_02")
+            mask.modifiers["Hook_Border"].object = bpy.data.objects['ContourCurve']
+
         bpy.ops.object.mode_set(mode='EDIT')
         bpy.ops.mesh.select_all(action='DESELECT')
         bpy.ops.mesh.select_mode(use_extend=False, use_expand=False, type='VERT')
@@ -882,10 +904,6 @@ class myfacemask_edit_mask(Operator):
         bpy.context.scene.tool_settings.use_proportional_edit = True
         bpy.context.scene.tool_settings.proportional_size = 20
 
-        if "Hole_01" in bpy.data.objects.keys():
-            bpy.data.objects["Hole_01"].hide_viewport = True
-        if "Hole_02" in bpy.data.objects.keys():
-            bpy.data.objects["Hole_02"].hide_viewport = True
         context.space_data.show_gizmo_object_translate = False
         context.space_data.show_gizmo_object_rotate = False
 
