@@ -140,6 +140,21 @@ def update_details(self, context):
     bpy.context.view_layer.objects.active = surf
     thickness = surf.modifiers['Thickness'].thickness
 
+    border_depth = 0
+    if context.scene.myfacemask_border in bpy.data.objects.keys():
+        bpy.data.collections['Borders'].hide_viewport = False
+        ob2 = bpy.data.objects[context.scene.myfacemask_border]
+        ob2.hide_viewport = False
+        me2 = simple_to_mesh(ob2)
+        bpy.data.collections['Borders'].hide_viewport = True
+        ob2.hide_viewport = True
+        verts2 = [0]*len(me2.vertices)*3
+        me2.vertices.foreach_get('co',verts2)
+        verts2 = np.array(verts2).reshape((-1,3))
+        border_depth = np.max(verts2, axis=0)[2]
+    if 'Smooth_Border' in surf.modifiers.keys():
+        surf.modifiers['Smooth_Border'].iterations = 5 + int(border_depth/0.3)
+
     if 'Bevel' in surf.modifiers.keys():
         show_mod = [m.show_viewport for m in surf.modifiers]
         for m in surf.modifiers: m.show_viewport = False
@@ -239,21 +254,21 @@ def update_details(self, context):
     del_materials = [1,2,3,4]
 
     # ROUNDED SEAL
-    if 'Seal' in bpy.data.objects.keys():
+    if context.scene.myfacemask_border in bpy.data.objects.keys():
         bpy.data.collections['Borders'].hide_viewport = False
-        ob1 = bpy.data.objects[context.scene.myfacemask_border]
-        ob1.hide_viewport = False
-        me1 = simple_to_mesh(ob1)
+        ob2 = bpy.data.objects[context.scene.myfacemask_border]
+        ob2.hide_viewport = False
+        me2 = simple_to_mesh(ob2)
         bpy.data.collections['Borders'].hide_viewport = True
-        ob1.hide_viewport = True
-        verts1 = [0]*len(me1.vertices)*3
-        me1.vertices.foreach_get('co',verts1)
-        verts1 = np.array(verts1).reshape((-1,3))
+        ob2.hide_viewport = True
+        verts2 = [0]*len(me2.vertices)*3
+        me2.vertices.foreach_get('co',verts2)
+        verts2 = np.array(verts2).reshape((-1,3))
 
-        vx = verts1[:,0,np.newaxis]
-        vy = verts1[:,1,np.newaxis]
-        vz = verts1[:,2,np.newaxis]
-        if '_PERP' in ob1.data.name:
+        vx = verts2[:,0,np.newaxis]
+        vy = verts2[:,1,np.newaxis]
+        vz = verts2[:,2,np.newaxis]
+        if '_PERP' in ob2.data.name:
             fixed = vz > 0.001
             vx[fixed] = 0.5 + (vx[fixed]-0.5)/thickness
 
@@ -265,7 +280,7 @@ def update_details(self, context):
                     v01 = verts0[f.vertices[1]]
                     v11 = verts0[f.vertices[2]]
                     co2 = np_lerp2(v00, v10, v01, v11, vx, vy)
-                    if '_PERP' in ob1.data.name:
+                    if '_PERP' in ob2.data.name:
                         nor2 = np.array((0,0,1))
                     else:
                         n00 = normals0[f.vertices[0]]
@@ -277,8 +292,8 @@ def update_details(self, context):
                         nor2 = np_lerp2(n00, n10, n01, n11, vx, vy)
                     co2 = co2 + nor2*vz
                     co = list(co2.flatten())
-                    me1.vertices.foreach_set('co',co)
-                    bm.from_mesh(me1)
+                    me2.vertices.foreach_set('co',co)
+                    bm.from_mesh(me2)
         del_materials.append(5)
 
     del_faces = [f for f in bm.faces if f.material_index in del_materials and f.calc_center_bounds()[2]>25]
@@ -338,28 +353,36 @@ def update_details(self, context):
 
 def update_assets():
     coll = bpy.data.collections['Hangs']
-    types = [(o.name, o.name,'') for o in coll.objects]
+    objects = [o.name for o in coll.objects]
+    objects.sort()
+    types = [(o, o,'') for o in objects]
+    if ('Vertical','Vertical','') in types: default = 'Vertical'
+    else: default = types[1][0]
     bpy.types.Scene.myfacemask_hangs =  EnumProperty(
         items = types,
-        default = types[-1][0],
+        default = default,
         name = "Hangs Type",
         update = update_details
     )
     coll = bpy.data.collections['Borders']
-    types = [(o.name, o.name,'') for o in coll.objects]
+    objects = [o.name for o in coll.objects]
+    objects.sort()
+    types = [(o, o,'') for o in objects]
+    if ('Simple','Simple','') in types: default = 'Simple'
+    else: default = types[1][0]
     bpy.types.Scene.myfacemask_border =  EnumProperty(
         items = types,
-        default = types[-1][0],
+        default = default,
         name = "Border Type",
         update = update_details
     )
     coll = bpy.data.collections['Filters']
     types = [(o.name.split('Filter_')[1], o.name.split('Filter_')[1],'') for o in coll.objects if 'Filter_' in o.name]
-    if ('WASP','WASP','') in types: default_filter = 'WASP'
-    else: default_filter = types[-1][0]
+    if ('WASP','WASP','') in types: default = 'WASP'
+    else: default = types[1][0]
     bpy.types.Scene.myfacemask_model =  EnumProperty(
         items = types,
-        default = default_filter,
+        default = default,
         name = "Model Type",
         update = update_model
     )
@@ -472,15 +495,15 @@ class myfacemask_remesh(bpy.types.Operator):
         except: return False
 
     def execute(self, context):
-        #bpy.ops.view3d.view_selected()
-        context.object.modifiers.new(name='Remesh',type='REMESH')
-        context.object.modifiers["Remesh"].mode = 'SMOOTH'
-        context.object.modifiers["Remesh"].octree_depth = self.detail
-        context.object.name = 'Face'
-        context.object.data.materials.append(bpy.data.materials['Face_Material'])
+        ob = context.object
+        ob.modifiers.new(name='Remesh',type='REMESH')
+        ob.modifiers["Remesh"].mode = 'SMOOTH'
+        ob.modifiers["Remesh"].octree_depth = self.detail
+        ob.name = 'Face'
+        ob.data.materials.append(bpy.data.materials['Face_Material'])
         bpy.ops.object.modifier_apply(apply_as='DATA', modifier="Remesh")
-        #bpy.ops.object.shade_smooth()
         bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
+        ob.lock_scale = (True, True, True)
         return {'FINISHED'}
 
 class myfacemask_mirror_border(bpy.types.Operator):
@@ -1035,6 +1058,8 @@ class MYFACEMASK_PT_weight(Panel):
                 row = col.row(align=True)
                 row.operator("import_scene.obj", text="OBJ", icon='IMPORT')
                 row.operator("import_mesh.stl", text="STL", icon='IMPORT')
+                if 'Face' not in context.scene.objects.keys():
+                    col.label(text='The units are set to mm', icon='INFO')
                 col.separator()
                 col.operator("object.myfacemask_remesh", icon="MOD_REMESH", text="Remesh")
                 col.separator()
