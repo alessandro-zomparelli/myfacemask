@@ -216,9 +216,9 @@ def update_details(self, context):
     uv_verts = (verts1*(sides-1))%1
     uv_quad = (verts1*(sides-1))//1
     uv_quad = uv_quad.astype(int)
-    u0 = uv_quad[:,0]
+    u0 = np.clip(uv_quad[:,0], 0, sides-1)
     u1 = np.clip(uv_quad[:,0]+1, 0, sides-1)
-    v0 = uv_quad[:,1]
+    v0 = np.clip(uv_quad[:,1], 0, sides-1)
     v1 = np.clip(uv_quad[:,1]+1, 0, sides-1)
 
     vx = uv_verts[:,0,np.newaxis]
