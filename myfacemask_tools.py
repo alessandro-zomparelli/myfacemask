@@ -307,11 +307,11 @@ def update_details(self, context):
     # Add a final Subdivision Surface
     subsurf = surf.modifiers.new(name='Subsurf', type='SUBSURF')
     subsurf.use_creases = False
-    bpy.ops.object.modifier_apply(apply_as='DATA', modifier='Subsurf')
+    bpy.ops.object.modifier_apply(modifier='Subsurf')
     bool = surf.modifiers.new(name='Bool', type='BOOLEAN')
     bool.operation = 'UNION'
     bool.object = bpy.data.objects[context.scene.myfacemask_filter]
-    bpy.ops.object.modifier_apply(apply_as='DATA', modifier='Bool')
+    bpy.ops.object.modifier_apply(modifier='Bool')
 
     '''
     filter = bpy.data.objects[context.scene.myfacemask_filter]
@@ -501,7 +501,7 @@ class myfacemask_remesh(bpy.types.Operator):
         ob.modifiers["Remesh"].octree_depth = self.detail
         ob.name = 'Face'
         ob.data.materials.append(bpy.data.materials['Face_Material'])
-        bpy.ops.object.modifier_apply(apply_as='DATA', modifier="Remesh")
+        bpy.ops.object.modifier_apply(modifier="Remesh")
         bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
         ob.lock_scale = (True, True, True)
         return {'FINISHED'}

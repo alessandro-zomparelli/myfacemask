@@ -27,8 +27,8 @@
 bl_info = {
     "name": "MyFaceMask",
     "author": "Alessandro Zomparelli with WASP",
-    "version": (0, 2, 0),
-    "blender": (2, 82, 0),
+    "version": (0, 2, 1),
+    "blender": (2, 92, 0),
     "location": "Viewport > Right panel",
     "description": "Custom made 3D printable breathing Mask, based on 3D scanned face",
     "warning": "",
